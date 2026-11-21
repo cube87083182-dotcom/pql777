@@ -1,0 +1,1512 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+  <title>PARKOUR RUSH 10P - 10인 실시간 파쿠르 레이스</title>
+  <script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script>
+  <script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
+  <style>
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      -webkit-user-select: none;
+      user-select: none;
+      -webkit-touch-callout: none;
+      -webkit-tap-highlight-color: transparent;
+    }
+    html, body {
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      background: #0f172a;
+      color: #f8fafc;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      touch-action: none;
+      overscroll-behavior: none;
+    }
+    #game-wrapper {
+      position: relative;
+      width: 100%;
+      height: 100%;
+    }
+    canvas#gameCanvas {
+      display: block;
+      width: 100%;
+      height: 100%;
+      touch-action: none;
+    }
+
+    /* 가로 회전 안내 */
+    #rotate-notice {
+      display: none;
+      position: fixed;
+      inset: 0;
+      z-index: 999;
+      background: #020617;
+      color: #f8fafc;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      text-align: center;
+      padding: 24px;
+    }
+    @media (orientation: portrait) and (max-width: 900px) {
+      #rotate-notice { display: flex; }
+    }
+
+    /* 상단 HUD */
+    #hud {
+      position: fixed;
+      top: 10px;
+      left: 12px;
+      right: 12px;
+      z-index: 20;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      pointer-events: none;
+    }
+    .hud-top-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 6px;
+      font-size: 12px;
+      font-weight: 700;
+      flex-wrap: wrap;
+    }
+    .hud-badge {
+      background: rgba(15, 23, 42, 0.84);
+      border: 1px solid rgba(255, 255, 255, 0.16);
+      padding: 5px 10px;
+      border-radius: 10px;
+      backdrop-filter: blur(4px);
+    }
+    .rank-badge {
+      background: linear-gradient(135deg, rgba(37, 99, 235, 0.9), rgba(124, 58, 237, 0.9));
+      border: 1px solid #93c5fd;
+      color: #fff;
+      font-size: 13px;
+      font-weight: 900;
+    }
+    #btn-exit-match {
+      pointer-events: auto;
+      background: rgba(239, 68, 68, 0.92);
+      color: #fff;
+      border: none;
+      border-radius: 8px;
+      padding: 6px 10px;
+      font-size: 12px;
+      font-weight: 700;
+      cursor: pointer;
+    }
+    .progress-track {
+      position: relative;
+      width: 100%;
+      height: 16px;
+      background: rgba(15, 23, 42, 0.88);
+      border: 1px solid rgba(255, 255, 255, 0.22);
+      border-radius: 999px;
+      overflow: visible;
+    }
+    .progress-fill-me {
+      height: 100%;
+      width: 0%;
+      background: linear-gradient(90deg, #38bdf8, #3b82f6);
+      border-radius: 999px;
+      transition: width 0.08s linear;
+    }
+    .marker-dot {
+      position: absolute;
+      top: 50%;
+      transform: translate(-50%, -50%);
+      width: 18px;
+      height: 18px;
+      border-radius: 50%;
+      font-size: 9px;
+      font-weight: 900;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      border: 2px solid #fff;
+      box-shadow: 0 2px 5px rgba(0,0,0,0.55);
+      transition: left 0.08s linear;
+    }
+    .marker-opp {
+      width: 14px;
+      height: 14px;
+      font-size: 8px;
+      background: #ef4444;
+      z-index: 1;
+      opacity: 0.88;
+    }
+    #marker-me {
+      width: 22px;
+      height: 22px;
+      font-size: 10px;
+      background: #2563eb;
+      border-color: #fde047;
+      z-index: 5;
+    }
+
+    /* 오버레이 화면 */
+    .overlay-screen {
+      position: fixed;
+      inset: 0;
+      z-index: 50;
+      background: rgba(2, 6, 23, 0.85);
+      backdrop-filter: blur(6px);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 14px;
+      pointer-events: auto;
+    }
+    .overlay-screen.hidden {
+      display: none !important;
+      pointer-events: none !important;
+    }
+
+    .panel {
+      width: 100%;
+      max-width: 700px;
+      max-height: 92vh;
+      overflow-y: auto;
+      background: #1e293b;
+      border: 1px solid rgba(255, 255, 255, 0.16);
+      border-radius: 18px;
+      padding: 18px 20px;
+      box-shadow: 0 20px 50px rgba(0, 0, 0, 0.65);
+      touch-action: pan-y;
+    }
+    .title {
+      font-size: 24px;
+      font-weight: 900;
+      text-align: center;
+      background: linear-gradient(90deg, #38bdf8, #a855f7, #f43f5e);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      margin-bottom: 4px;
+    }
+    .subtitle {
+      text-align: center;
+      font-size: 12px;
+      color: #94a3b8;
+      margin-bottom: 14px;
+    }
+
+    /* 스킨 선택 그리드 (10종) */
+    .skin-label {
+      font-size: 13px;
+      font-weight: 700;
+      color: #cbd5e1;
+      margin-bottom: 8px;
+      display: flex;
+      justify-content: space-between;
+    }
+    .skin-grid {
+      display: grid;
+      grid-template-columns: repeat(5, 1fr);
+      gap: 8px;
+      margin-bottom: 16px;
+    }
+    .skin-card {
+      background: #0f172a;
+      border: 2px solid #334155;
+      border-radius: 12px;
+      padding: 8px 4px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 4px;
+      cursor: pointer;
+      transition: transform 0.1s, border-color 0.15s;
+    }
+    .skin-card.active {
+      border-color: #38bdf8;
+      background: rgba(56, 189, 248, 0.16);
+      transform: scale(1.03);
+    }
+    .skin-preview {
+      width: 28px;
+      height: 28px;
+      border-radius: 6px;
+      border: 2px solid rgba(255,255,255,0.6);
+      position: relative;
+    }
+    .skin-name {
+      font-size: 11px;
+      font-weight: 700;
+      color: #e2e8f0;
+      text-align: center;
+      white-space: nowrap;
+    }
+
+    /* 로비 액션 버튼 */
+    .btn-row {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+    .main-btn {
+      flex: 1;
+      min-width: 180px;
+      padding: 13px 16px;
+      border: none;
+      border-radius: 12px;
+      font-size: 15px;
+      font-weight: 800;
+      cursor: pointer;
+      color: #fff;
+      transition: transform 0.08s;
+    }
+    .main-btn:active { transform: scale(0.97); }
+    .btn-online {
+      background: linear-gradient(135deg, #2563eb, #7c3aed);
+      box-shadow: 0 6px 20px rgba(37, 99, 235, 0.4);
+    }
+    .btn-bot {
+      background: linear-gradient(135deg, #059669, #10b981);
+      box-shadow: 0 6px 20px rgba(16, 185, 129, 0.35);
+    }
+    .btn-instant {
+      background: linear-gradient(135deg, #d97706, #f59e0b);
+      box-shadow: 0 6px 20px rgba(245, 158, 11, 0.35);
+      margin-top: 8px;
+      width: 100%;
+    }
+    .btn-instant.hidden { display: none !important; }
+
+    #match-status {
+      margin-top: 12px;
+      text-align: center;
+      font-size: 13px;
+      font-weight: 700;
+      color: #38bdf8;
+      min-height: 20px;
+    }
+
+    /* 대기방 10명 슬롯 미리보기 */
+    #lobby-slots {
+      display: grid;
+      grid-template-columns: repeat(5, 1fr);
+      gap: 6px;
+      margin-top: 10px;
+    }
+    #lobby-slots.hidden { display: none !important; }
+    .slot-chip {
+      background: #0f172a;
+      border: 1px solid #334155;
+      border-radius: 8px;
+      padding: 5px 4px;
+      font-size: 11px;
+      font-weight: 700;
+      text-align: center;
+      color: #64748b;
+    }
+    .slot-chip.filled {
+      border-color: #38bdf8;
+      color: #f8fafc;
+      background: rgba(56, 189, 248, 0.14);
+    }
+
+    /* 순위표 결과 */
+    #leaderboard-list {
+      text-align: left;
+      background: #0f172a;
+      border-radius: 12px;
+      padding: 10px 12px;
+      margin: 12px 0 16px;
+      max-height: 220px;
+      overflow-y: auto;
+      font-size: 13px;
+    }
+    .lb-row {
+      display: flex;
+      justify-content: space-between;
+      padding: 5px 6px;
+      border-bottom: 1px solid rgba(255,255,255,0.07);
+    }
+    .lb-row.me {
+      background: rgba(56, 189, 248, 0.18);
+      border-radius: 6px;
+      font-weight: 900;
+      color: #38bdf8;
+    }
+
+    /* 카운트다운 */
+    #countdown-overlay {
+      position: fixed;
+      inset: 0;
+      z-index: 45;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 76px;
+      font-weight: 900;
+      color: #fff;
+      text-shadow: 0 6px 24px rgba(0, 0, 0, 0.8);
+      pointer-events: none;
+    }
+    #countdown-overlay.hidden { display: none !important; }
+
+    /* 모바일 터치 컨트롤러 */
+    #touch-controls {
+      position: fixed;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      height: 145px;
+      z-index: 35;
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-end;
+      padding: 14px 20px calc(14px + env(safe-area-inset-bottom));
+      pointer-events: none;
+    }
+    .ctrl-group {
+      display: flex;
+      gap: 14px;
+      pointer-events: none;
+    }
+    .touch-btn {
+      pointer-events: auto;
+      width: 78px;
+      height: 78px;
+      border-radius: 50%;
+      background: rgba(15, 23, 42, 0.72);
+      border: 3px solid rgba(255, 255, 255, 0.35);
+      color: #fff;
+      font-size: 16px;
+      font-weight: 900;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      box-shadow: 0 6px 18px rgba(0, 0, 0, 0.45);
+      touch-action: none;
+      transition: transform 0.05s, background 0.05s, border-color 0.05s;
+    }
+    .touch-btn.pressed {
+      transform: scale(0.92);
+      background: rgba(56, 189, 248, 0.55);
+      border-color: #38bdf8;
+    }
+    #btn-jump {
+      width: 84px;
+      height: 84px;
+      border-color: rgba(52, 211, 153, 0.65);
+    }
+    #btn-jump.pressed {
+      background: rgba(16, 185, 129, 0.6);
+      border-color: #34d399;
+    }
+    #btn-dash {
+      width: 76px;
+      height: 76px;
+      border-color: rgba(251, 191, 36, 0.7);
+      position: relative;
+    }
+    #btn-dash.cooldown {
+      opacity: 0.55;
+      border-color: #64748b;
+    }
+    #btn-dash.pressed {
+      background: rgba(245, 158, 11, 0.65);
+      border-color: #fbbf24;
+    }
+    .sub-cd {
+      font-size: 11px;
+      font-weight: 700;
+      color: #fde047;
+      margin-top: 2px;
+    }
+  </style>
+</head>
+<body>
+  <div id="rotate-notice">
+    <div style="font-size:44px;margin-bottom:12px;">📱🔄</div>
+    <div style="font-size:18px;font-weight:800;margin-bottom:6px;">가로 화면으로 회전해 주세요</div>
+    <div style="font-size:13px;color:#94a3b8;">10인 파쿠르 레이스는 가로 모드에 최적화되어 있습니다.</div>
+  </div>
+
+  <div id="game-wrapper">
+    <canvas id="gameCanvas"></canvas>
+
+    <!-- 상단 HUD -->
+    <div id="hud">
+      <div class="hud-top-row">
+        <div class="hud-badge rank-badge" id="hud-rank">🏅 1위 / 10명</div>
+        <div class="hud-badge" id="hud-map">🗺️ 맵: 대기 중</div>
+        <div class="hud-badge" id="hud-timer">⏱️ 00.00s</div>
+        <div class="hud-badge" id="hud-mode">10인 레이스</div>
+        <button id="btn-exit-match" type="button">로비로</button>
+      </div>
+      <div class="progress-track" id="progress-track">
+        <div class="progress-fill-me" id="progress-me"></div>
+        <div class="marker-dot" id="marker-me" title="나">나</div>
+      </div>
+    </div>
+
+    <!-- 카운트다운 -->
+    <div id="countdown-overlay" class="hidden">3</div>
+
+    <!-- 모바일 & 마우스 터치 컨트롤 -->
+    <div id="touch-controls">
+      <div class="ctrl-group">
+        <button type="button" class="touch-btn" id="btn-left">◀</button>
+        <button type="button" class="touch-btn" id="btn-right">▶</button>
+      </div>
+      <div class="ctrl-group">
+        <button type="button" class="touch-btn" id="btn-dash">
+          <span>DASH</span>
+          <span class="sub-cd" id="dash-cd-text">READY</span>
+        </button>
+        <button type="button" class="touch-btn" id="btn-jump">JUMP</button>
+      </div>
+    </div>
+
+    <!-- 메인 로비 -->
+    <div id="lobby-screen" class="overlay-screen">
+      <div class="panel">
+        <div class="title">PARKOUR RUSH 10P</div>
+        <div class="subtitle">랜덤 9명과 함께 총 10명 동시 레이스 · 12종 랜덤 맵 · 3초 쿨타임 대쉬</div>
+
+        <div class="skin-label">
+          <span>🎨 캐릭터 스킨 선택 (10종)</span>
+          <span id="selected-skin-label" style="color:#38bdf8;">기본 러너</span>
+        </div>
+        <div class="skin-grid" id="skin-grid"></div>
+
+        <div class="btn-row">
+          <button type="button" class="main-btn btn-online" id="btn-random-match">🌐 10인 랜덤 매치 시작</button>
+          <button type="button" class="main-btn btn-bot" id="btn-bot-match">🤖 AI 봇 9명과 연습 (총 10명)</button>
+        </div>
+
+        <button type="button" class="main-btn btn-instant hidden" id="btn-fill-now">⚡ 지금 빈자리 봇으로 채워 10명 바로 출발!</button>
+
+        <div id="match-status">버튼을 눌러 랜덤 9명(총 10명)과 파쿠르 레이스를 시작하세요!</div>
+        <div id="lobby-slots" class="hidden"></div>
+      </div>
+    </div>
+
+    <!-- 결과 화면 -->
+    <div id="result-screen" class="overlay-screen hidden">
+      <div class="panel" style="max-width:480px;text-align:center;">
+        <div id="result-icon" style="font-size:48px;margin-bottom:4px;">🏆</div>
+        <div id="result-title" class="title" style="font-size:26px;">1위 완주!</div>
+        <div id="result-desc" style="font-size:13px;color:#cbd5e1;margin-top:4px;">10명 중 가장 먼저 결승선을 통과했습니다!</div>
+        <div id="leaderboard-list"></div>
+        <div class="btn-row">
+          <button type="button" class="main-btn btn-online" id="btn-rematch">다시 매칭하기</button>
+          <button type="button" class="main-btn btn-bot" id="btn-result-lobby">로비로 이동</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // ==========================================
+    // 1. 10가지 캐릭터 스킨 데이터
+    // ==========================================
+    const SKINS = [
+      { id: 0, name: "기본 러너", body: "#38bdf8", accent: "#0284c7", eye: "#ffffff", band: "#facc15" },
+      { id: 1, name: "네온 사이버", body: "#a855f7", accent: "#6b21a8", eye: "#22d3ee", band: "#f472b6" },
+      { id: 2, name: "파이어 닌자", body: "#ef4444", accent: "#991b1b", eye: "#fef08a", band: "#1e293b" },
+      { id: 3, name: "골드 챔피언", body: "#f59e0b", accent: "#b45309", eye: "#ffffff", band: "#fef3c7" },
+      { id: 4, name: "우주인", body: "#f8fafc", accent: "#94a3b8", eye: "#38bdf8", band: "#0f172a" },
+      { id: 5, name: "고릴라 파워", body: "#475569", accent: "#1e293b", eye: "#fbbf24", band: "#a3e635" },
+      { id: 6, name: "아이스 슬라임", body: "#67e8f9", accent: "#06b6d4", eye: "#0f172a", band: "#ffffff" },
+      { id: 7, name: "다크 팬텀", body: "#1e1b4b", accent: "#090d16", eye: "#f43f5e", band: "#818cf8" },
+      { id: 8, name: "개구리 점퍼", body: "#4ade80", accent: "#15803d", eye: "#fef08a", band: "#fb7185" },
+      { id: 9, name: "레인보우 큐브", body: "#ec4899", accent: "#8b5cf6", eye: "#ffffff", band: "#34d399" }
+    ];
+
+    let selectedSkinId = Number(localStorage.getItem("parkour_skin_id") || 0);
+    if (!SKINS[selectedSkinId]) selectedSkinId = 0;
+
+    function renderSkinGrid() {
+      const grid = document.getElementById("skin-grid");
+      grid.innerHTML = "";
+      SKINS.forEach(skin => {
+        const card = document.createElement("div");
+        card.className = "skin-card" + (skin.id === selectedSkinId ? " active" : "");
+        card.innerHTML = `
+          <div class="skin-preview" style="background:${skin.body}; border-color:${skin.band};">
+            <div style="position:absolute;top:6px;right:4px;width:6px;height:6px;border-radius:50%;background:${skin.eye};"></div>
+          </div>
+          <div class="skin-name">${skin.name}</div>
+        `;
+        card.addEventListener("click", () => {
+          selectedSkinId = skin.id;
+          localStorage.setItem("parkour_skin_id", String(selectedSkinId));
+          document.getElementById("selected-skin-label").textContent = skin.name;
+          renderSkinGrid();
+        });
+        grid.appendChild(card);
+      });
+      document.getElementById("selected-skin-label").textContent = SKINS[selectedSkinId].name;
+    }
+    renderSkinGrid();
+
+    // ==========================================
+    // 2. 12가지 랜덤 맵 생성기 (시드 기반 동일 맵 보장)
+    // ==========================================
+    const MAP_THEMES = [
+      { id: 0, name: "1. 초원의 시작", bgTop: "#0f172a", bgBot: "#1e3a5f", plat: "#22c55e", platTop: "#86efac", hazard: "#ef4444" },
+      { id: 1, name: "2. 용암 협곡", bgTop: "#1f0909", bgBot: "#450a0a", plat: "#78716c", platTop: "#f97316", hazard: "#ff2a2a" },
+      { id: 2, name: "3. 하늘 계단", bgTop: "#0c4a6e", bgBot: "#38bdf8", plat: "#f8fafc", platTop: "#bae6fd", hazard: "#f43f5e" },
+      { id: 3, name: "4. 움직이는 공장", bgTop: "#18181b", bgBot: "#3f3f46", plat: "#eab308", platTop: "#fef08a", hazard: "#ef4444" },
+      { id: 4, name: "5. 얼음 빙판길", bgTop: "#082f49", bgBot: "#0284c7", plat: "#a5f3fc", platTop: "#ffffff", hazard: "#e11d48" },
+      { id: 5, name: "6. 스프링 타워", bgTop: "#2e1065", bgBot: "#581c87", plat: "#c084fc", platTop: "#f3e8ff", hazard: "#fb7185" },
+      { id: 6, name: "7. 네온 사이버", bgTop: "#090d16", bgBot: "#1e1b4b", plat: "#2563eb", platTop: "#22d3ee", hazard: "#f43f5e" },
+      { id: 7, name: "8. 사막 피라미드", bgTop: "#451a03", bgBot: "#92400e", plat: "#f59e0b", platTop: "#fde68a", hazard: "#dc2626" },
+      { id: 8, name: "9. 정글 유적", bgTop: "#052e16", bgBot: "#14532d", plat: "#65a30d", platTop: "#bef264", hazard: "#ef4444" },
+      { id: 9, name: "10. 우주 정거장", bgTop: "#020617", bgBot: "#0f172a", plat: "#64748b", platTop: "#e2e8f0", hazard: "#f97316" },
+      { id: 10, name: "11. 심해 연구소", bgTop: "#042f2e", bgBot: "#115e59", plat: "#14b8a6", platTop: "#99f6e4", hazard: "#fb7185" },
+      { id: 11, name: "12. 최종 시련", bgTop: "#1e1b4b", bgBot: "#4c0519", plat: "#f43f5e", platTop: "#fecdd3", hazard: "#facc15" }
+    ];
+
+    function mulberry32(seed) {
+      return function() {
+        let t = seed += 0x6D2B79F5;
+        t = Math.imul(t ^ t >>> 15, t | 1);
+        t ^= t + Math.imul(t ^ t >>> 7, t | 61);
+        return ((t ^ t >>> 14) >>> 0) / 4294967296;
+      };
+    }
+
+    function buildCourse(mapIndex, seed) {
+      const theme = MAP_THEMES[mapIndex % MAP_THEMES.length];
+      const rand = mulberry32(seed);
+      const platforms = [];
+      const hazards = [];
+      const springs = [];
+      const checkpoints = [];
+
+      platforms.push({ x: -120, y: 420, w: 520, h: 80, moveX: 0, moveY: 0, speed: 0, baseX: -120, baseY: 420 });
+      checkpoints.push({ x: 80, y: 380 });
+
+      let curX = 460;
+      let curY = 400;
+      const totalSegments = 24;
+
+      for (let i = 0; i < totalSegments; i++) {
+        const gap = 85 + Math.floor(rand() * 85);
+        const w = (mapIndex === 2 ? 105 : 130) + Math.floor(rand() * 95);
+        const deltaY = Math.floor((rand() - 0.52) * 120);
+        curX += gap;
+        curY = Math.max(160, Math.min(540, curY + deltaY));
+
+        let moveX = 0, moveY = 0, speed = 0;
+        if (mapIndex === 3 || (i % 4 === 2 && rand() > 0.35)) {
+          if (rand() > 0.5) { moveX = 55; speed = 2.2; }
+          else { moveY = 45; speed = 2.0; }
+        }
+
+        platforms.push({
+          x: curX, y: curY, w, h: 36,
+          baseX: curX, baseY: curY,
+          moveX, moveY, speed
+        });
+
+        if (mapIndex === 5 || (i % 5 === 3 && rand() > 0.3)) {
+          springs.push({ x: curX + w * 0.5 - 18, y: curY - 14, w: 36, h: 14 });
+        }
+
+        if (w >= 150 && i > 1 && i % 3 === 1) {
+          hazards.push({ x: curX + w * 0.45, y: curY - 14, w: 32, h: 14 });
+        }
+
+        if (i === 6 || i === 12 || i === 18) {
+          checkpoints.push({ x: curX + w * 0.5, y: curY - 40 });
+        }
+
+        curX += w;
+      }
+
+      const finishX = curX + 110;
+      const finishY = curY;
+      platforms.push({
+        x: finishX, y: finishY, w: 360, h: 80,
+        baseX: finishX, baseY: finishY,
+        moveX: 0, moveY: 0, speed: 0
+      });
+
+      const goal = { x: finishX + 160, y: finishY - 110, w: 24, h: 110 };
+      return { theme, platforms, hazards, springs, checkpoints, goal, startX: 80, startY: 360 };
+    }
+
+    // ==========================================
+    // 3. 캔버스 리사이즈
+    // ==========================================
+    const canvas = document.getElementById("gameCanvas");
+    const ctx = canvas.getContext("2d");
+    let viewW = window.innerWidth;
+    let viewH = window.innerHeight;
+
+    function resizeCanvas() {
+      const rect = canvas.getBoundingClientRect();
+      viewW = Math.max(320, rect.width || window.innerWidth);
+      viewH = Math.max(240, rect.height || window.innerHeight);
+      const dpr = Math.min(window.devicePixelRatio || 1, 2);
+      canvas.width = Math.floor(viewW * dpr);
+      canvas.height = Math.floor(viewH * dpr);
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    }
+    window.addEventListener("resize", resizeCanvas);
+    if (window.ResizeObserver) {
+      new ResizeObserver(resizeCanvas).observe(document.getElementById("game-wrapper"));
+    }
+    resizeCanvas();
+
+    // ==========================================
+    // 4. 입력 처리 (터치 & 키보드)
+    // ==========================================
+    const input = { left: false, right: false, jump: false, dash: false };
+
+    function bindButton(el, keyName, onTrigger) {
+      const press = (e) => {
+        if (e.cancelable) e.preventDefault();
+        input[keyName] = true;
+        el.classList.add("pressed");
+        if (onTrigger) onTrigger();
+      };
+      const release = (e) => {
+        if (e && e.cancelable) e.preventDefault();
+        input[keyName] = false;
+        el.classList.remove("pressed");
+      };
+
+      el.addEventListener("touchstart", press, { passive: false });
+      el.addEventListener("touchend", release, { passive: false });
+      el.addEventListener("touchcancel", release, { passive: false });
+      el.addEventListener("mousedown", press);
+      el.addEventListener("mouseup", release);
+      el.addEventListener("mouseleave", release);
+    }
+
+    bindButton(document.getElementById("btn-left"), "left");
+    bindButton(document.getElementById("btn-right"), "right");
+    bindButton(document.getElementById("btn-jump"), "jump", () => tryJump());
+    bindButton(document.getElementById("btn-dash"), "dash", () => tryDash());
+
+    window.addEventListener("keydown", (e) => {
+      if (e.code === "ArrowLeft" || e.code === "KeyA") input.left = true;
+      if (e.code === "ArrowRight" || e.code === "KeyD") input.right = true;
+      if (e.code === "Space" || e.code === "ArrowUp" || e.code === "KeyW") {
+        if (!input.jump) tryJump();
+        input.jump = true;
+      }
+      if (e.code === "ShiftLeft" || e.code === "ShiftRight" || e.code === "KeyE") {
+        if (!input.dash) tryDash();
+        input.dash = true;
+      }
+    });
+    window.addEventListener("keyup", (e) => {
+      if (e.code === "ArrowLeft" || e.code === "KeyA") input.left = false;
+      if (e.code === "ArrowRight" || e.code === "KeyD") input.right = false;
+      if (e.code === "Space" || e.code === "ArrowUp" || e.code === "KeyW") input.jump = false;
+      if (e.code === "ShiftLeft" || e.code === "ShiftRight" || e.code === "KeyE") input.dash = false;
+    });
+    window.addEventListener("blur", () => {
+      input.left = input.right = input.jump = input.dash = false;
+      document.querySelectorAll(".touch-btn").forEach(b => b.classList.remove("pressed"));
+    });
+
+    // ==========================================
+    // 5. 10인 레이스 상태 & 물리
+    // ==========================================
+    let currentCourse = buildCourse(0, 12345);
+    let gameState = "LOBBY";
+    let matchMode = "BOT";
+    let raceStartTime = 0;
+    let elapsedTime = 0;
+
+    const player = {
+      id: "ME",
+      name: "나 (ME)",
+      x: 80, y: 360, w: 30, h: 38,
+      vx: 0, vy: 0,
+      facing: 1,
+      grounded: false,
+      coyoteTimer: 0,
+      dashCooldown: 0,
+      dashActiveTimer: 0,
+      respawnX: 80, respawnY: 360,
+      finished: false,
+      finishTime: null
+    };
+
+    // 최대 9명의 상대 레이서 (총 10명)
+    let racers = [];
+
+    function createBotRacers(count) {
+      const botNames = ["번개러너", "스피드킹", "점프마스터", "네온질주", "파쿠르고수", "바람돌이", "로켓점퍼", "그림자닌자", "챔피언9"];
+      const list = [];
+      for (let i = 0; i < count; i++) {
+        list.push({
+          id: "BOT_" + i,
+          name: botNames[i % botNames.length],
+          isBot: true,
+          x: currentCourse.startX,
+          y: currentCourse.startY,
+          targetX: currentCourse.startX,
+          targetY: currentCourse.startY,
+          w: 30, h: 38,
+          facing: 1,
+          skinId: (selectedSkinId + i + 1) % SKINS.length,
+          baseSpeed: 285 + (i % 5) * 16 + Math.random() * 18,
+          jumpPhase: Math.random() * Math.PI * 2,
+          progress: 0,
+          finished: false,
+          finishTime: null
+        });
+      }
+      return list;
+    }
+
+    function setupProgressMarkers() {
+      const track = document.getElementById("progress-track");
+      track.querySelectorAll(".marker-opp").forEach(el => el.remove());
+      racers.forEach((r, idx) => {
+        const dot = document.createElement("div");
+        dot.className = "marker-dot marker-opp";
+        dot.id = "marker-opp-" + r.id;
+        dot.textContent = "P" + (idx + 2);
+        dot.style.background = SKINS[r.skinId]?.body || "#ef4444";
+        dot.style.left = "0%";
+        track.appendChild(dot);
+      });
+    }
+
+    function resetPlayersForCourse(course) {
+      player.x = course.startX;
+      player.y = course.startY;
+      player.vx = 0;
+      player.vy = 0;
+      player.facing = 1;
+      player.grounded = false;
+      player.dashCooldown = 0;
+      player.dashActiveTimer = 0;
+      player.respawnX = course.startX;
+      player.respawnY = course.startY;
+      player.finished = false;
+      player.finishTime = null;
+
+      racers.forEach((r, idx) => {
+        r.x = course.startX;
+        r.y = course.startY;
+        r.targetX = course.startX;
+        r.targetY = course.startY;
+        r.facing = 1;
+        r.progress = 0;
+        r.finished = false;
+        r.finishTime = null;
+        r.jumpPhase = idx * 0.7;
+      });
+      setupProgressMarkers();
+    }
+
+    function tryJump() {
+      if (gameState !== "RACING") return;
+      if (player.grounded || player.coyoteTimer > 0) {
+        player.vy = -660;
+        player.grounded = false;
+        player.coyoteTimer = 0;
+      }
+    }
+
+    function tryDash() {
+      if (gameState !== "RACING") return;
+      if (player.dashCooldown <= 0) {
+        player.dashCooldown = 3.0;
+        player.dashActiveTimer = 0.18;
+        player.vx = player.facing * 920;
+        player.vy = Math.min(player.vy, 0) * 0.25;
+      }
+    }
+
+    // ==========================================
+    // 6. 10인 실시간 온라인 매칭 (MQTT + WebRTC Mesh)
+    // ==========================================
+    let mqttClient = null;
+    let peer = null;
+    let peerConns = new Map();
+    let myPeerId = "pk10_" + Math.random().toString(36).slice(2, 10);
+    let queueMembers = new Map(); // id -> { id, skin, lastSeen }
+    let matchLoopTimer = null;
+    let autoFillTimer = null;
+    let syncInterval = null;
+    let waitSeconds = 12;
+
+    function cleanupNetwork() {
+      if (syncInterval) { clearInterval(syncInterval); syncInterval = null; }
+      if (matchLoopTimer) { clearInterval(matchLoopTimer); matchLoopTimer = null; }
+      if (autoFillTimer) { clearInterval(autoFillTimer); autoFillTimer = null; }
+      peerConns.forEach(c => { try { c.close(); } catch (e) {} });
+      peerConns.clear();
+      queueMembers.clear();
+      if (peer) { try { peer.destroy(); } catch (e) {} peer = null; }
+      if (mqttClient) { try { mqttClient.end(true); } catch (e) {} mqttClient = null; }
+      document.getElementById("btn-fill-now").classList.add("hidden");
+      document.getElementById("lobby-slots").classList.add("hidden");
+    }
+
+    function updateLobbySlotsUI() {
+      const slotsEl = document.getElementById("lobby-slots");
+      slotsEl.classList.remove("hidden");
+      const members = Array.from(queueMembers.values()).slice(0, 10);
+      let html = "";
+      for (let i = 0; i < 10; i++) {
+        if (members[i]) {
+          const isMe = members[i].id === myPeerId;
+          html += `<div class="slot-chip filled">${isMe ? "⭐ 나" : "👤 P" + (i + 1)}</div>`;
+        } else {
+          html += `<div class="slot-chip">대기중...</div>`;
+        }
+      }
+      slotsEl.innerHTML = html;
+    }
+
+    function startMatchSequence(mapIdx, seed, modeLabel, onlinePeersList) {
+      if (matchLoopTimer) { clearInterval(matchLoopTimer); matchLoopTimer = null; }
+      if (autoFillTimer) { clearInterval(autoFillTimer); autoFillTimer = null; }
+      document.getElementById("btn-fill-now").classList.add("hidden");
+      document.getElementById("lobby-slots").classList.add("hidden");
+
+      gameState = "COUNTDOWN";
+      currentCourse = buildCourse(mapIdx, seed);
+
+      // 온라인 참가자 + 부족한 인원 봇으로 채워 총 10명(나 + 9명) 구성
+      const builtRacers = [];
+      onlinePeersList.slice(0, 9).forEach((pInfo, idx) => {
+        builtRacers.push({
+          id: pInfo.id,
+          name: "P" + (idx + 2),
+          isBot: false,
+          x: currentCourse.startX,
+          y: currentCourse.startY,
+          targetX: currentCourse.startX,
+          targetY: currentCourse.startY,
+          w: 30, h: 38,
+          facing: 1,
+          skinId: pInfo.skin ?? ((idx + 1) % SKINS.length),
+          progress: 0,
+          finished: false,
+          finishTime: null
+        });
+      });
+
+      const neededBots = Math.max(0, 9 - builtRacers.length);
+      if (neededBots > 0) {
+        const bots = createBotRacers(neededBots);
+        bots.forEach((b, i) => {
+          b.name = "P" + (builtRacers.length + i + 2) + "(AI)";
+        });
+        builtRacers.push(...bots);
+      }
+
+      racers = builtRacers;
+      resetPlayersForCourse(currentCourse);
+
+      document.getElementById("lobby-screen").classList.add("hidden");
+      document.getElementById("result-screen").classList.add("hidden");
+      document.getElementById("hud-map").textContent = "🗺️ " + currentCourse.theme.name;
+      document.getElementById("hud-mode").textContent = modeLabel;
+
+      const cdEl = document.getElementById("countdown-overlay");
+      cdEl.classList.remove("hidden");
+      let count = 3;
+      cdEl.textContent = String(count);
+
+      const timer = setInterval(() => {
+        if (gameState !== "COUNTDOWN") {
+          clearInterval(timer);
+          cdEl.classList.add("hidden");
+          return;
+        }
+        count--;
+        if (count > 0) {
+          cdEl.textContent = String(count);
+        } else if (count === 0) {
+          cdEl.textContent = "GO!";
+          gameState = "RACING";
+          raceStartTime = performance.now();
+        } else {
+          cdEl.classList.add("hidden");
+          clearInterval(timer);
+        }
+      }, 850);
+    }
+
+    function startBot10PMatch() {
+      cleanupNetwork();
+      matchMode = "BOT";
+      const randomMap = Math.floor(Math.random() * 12);
+      const seed = Math.floor(Math.random() * 999999);
+      startMatchSequence(randomMap, seed, "🤖 10인 연습 레이스", []);
+    }
+
+    function launchOnline10PRoom() {
+      if (gameState !== "MATCHING") return;
+      const others = Array.from(queueMembers.values()).filter(m => m.id !== myPeerId).slice(0, 9);
+      const mapIdx = Math.floor(Math.random() * 12);
+      const seed = Math.floor(Math.random() * 999999);
+
+      // 연결된 피어들에게 시작 신호 브로드캐스트
+      peerConns.forEach(c => {
+        if (c.open) {
+          c.send({
+            type: "START_10P",
+            mapIdx,
+            seed,
+            roster: Array.from(queueMembers.values()).slice(0, 10)
+          });
+        }
+      });
+
+      if (mqttClient) { try { mqttClient.end(true); } catch (e) {} mqttClient = null; }
+      startMatchSequence(mapIdx, seed, "🌐 10인 실시간 레이스", others);
+    }
+
+    function startOnline10PMatch() {
+      cleanupNetwork();
+      matchMode = "ONLINE";
+      gameState = "MATCHING";
+      waitSeconds = 12;
+
+      const statusEl = document.getElementById("match-status");
+      const fillBtn = document.getElementById("btn-fill-now");
+      statusEl.textContent = "🌐 10인 랜덤 매치 대기열 연결 중...";
+
+      myPeerId = "pk10_" + Date.now().toString(36) + "_" + Math.random().toString(36).slice(2, 6);
+      queueMembers.set(myPeerId, { id: myPeerId, skin: selectedSkinId, lastSeen: Date.now() });
+      updateLobbySlotsUI();
+
+      try {
+        peer = new Peer(myPeerId);
+      } catch (err) {
+        statusEl.textContent = "⚠️ 현재 미리보기 환경에서는 외부 P2P 소켓이 제한됩니다. 'AI 봇 9명과 연습'을 눌러 바로 플레이하세요!";
+        return;
+      }
+
+      peer.on("open", () => {
+        fillBtn.classList.remove("hidden");
+        const topic = "parkour-rush-10p-global-queue-v1";
+        try {
+          mqttClient = mqtt.connect("wss://broker.emqx.io:8084/mqtt", {
+            clientId: myPeerId,
+            clean: true,
+            reconnectPeriod: 0,
+            connectTimeout: 5000
+          });
+        } catch (err) {
+          statusEl.textContent = "⚠️ 네트워크 제한 환경입니다. 'AI 봇 9명과 연습'으로 바로 시작해 보세요!";
+          return;
+        }
+
+        mqttClient.on("connect", () => {
+          mqttClient.subscribe(topic);
+          const broadcastSeek = () => {
+            if (gameState !== "MATCHING" || !mqttClient) return;
+            queueMembers.set(myPeerId, { id: myPeerId, skin: selectedSkinId, lastSeen: Date.now() });
+            mqttClient.publish(topic, JSON.stringify({ type: "SEEK10", id: myPeerId, skin: selectedSkinId }));
+
+            // 오래된 대기열 정리
+            const now = Date.now();
+            queueMembers.forEach((v, k) => {
+              if (k !== myPeerId && now - v.lastSeen > 6000) queueMembers.delete(k);
+            });
+            updateLobbySlotsUI();
+
+            // 10명 전원 모이면 가장 ID가 큰 호스트가 즉시 출발
+            if (queueMembers.size >= 10) {
+              const sortedIds = Array.from(queueMembers.keys()).sort();
+              if (sortedIds[sortedIds.length - 1] === myPeerId) {
+                launchOnline10PRoom();
+              }
+            }
+          };
+          broadcastSeek();
+          matchLoopTimer = setInterval(broadcastSeek, 1500);
+
+          autoFillTimer = setInterval(() => {
+            if (gameState !== "MATCHING") return;
+            waitSeconds--;
+            statusEl.textContent = `🔍 매칭 중 (${queueMembers.size}/10명) · ${waitSeconds}초 후 빈자리 AI 합류 및 자동 출발!`;
+            if (waitSeconds <= 0) {
+              launchOnline10PRoom();
+            }
+          }, 1000);
+        });
+
+        mqttClient.on("message", (t, payload) => {
+          if (gameState !== "MATCHING") return;
+          try {
+            const msg = JSON.parse(payload.toString());
+            if (msg.type === "SEEK10" && msg.id && msg.id !== myPeerId) {
+              queueMembers.set(msg.id, { id: msg.id, skin: msg.skin ?? 1, lastSeen: Date.now() });
+              updateLobbySlotsUI();
+              if (myPeerId > msg.id && !peerConns.has(msg.id) && peerConns.size < 9) {
+                const c = peer.connect(msg.id, { reliable: true });
+                attachPeerConn(c);
+              }
+            }
+          } catch (e) {}
+        });
+
+        mqttClient.on("error", () => {
+          if (gameState === "MATCHING") {
+            statusEl.textContent = "⚠️ 소켓 연결이 차단된 환경입니다. 'AI 봇 9명과 연습'을 눌러 플레이하세요!";
+          }
+        });
+      });
+
+      peer.on("connection", (incoming) => {
+        if (gameState !== "MATCHING" || peerConns.size >= 9) {
+          incoming.close();
+          return;
+        }
+        attachPeerConn(incoming);
+      });
+
+      peer.on("error", () => {
+        if (gameState === "MATCHING") {
+          statusEl.textContent = "⚠️ 외부 연결이 제한된 환경입니다. 'AI 봇 9명과 연습'을 눌러 플레이하세요!";
+        }
+      });
+    }
+
+    function attachPeerConn(c) {
+      peerConns.set(c.peer, c);
+      c.on("open", () => {
+        c.send({ type: "HELLO10", id: myPeerId, skin: selectedSkinId });
+        if (!syncInterval) {
+          syncInterval = setInterval(() => {
+            if (gameState === "RACING" || gameState === "COUNTDOWN") {
+              const packet = {
+                type: "POS10",
+                id: myPeerId,
+                x: Math.round(player.x),
+                y: Math.round(player.y),
+                facing: player.facing,
+                progress: getProgress(player.x),
+                finished: player.finished,
+                finishTime: player.finishTime
+              };
+              peerConns.forEach(connItem => {
+                if (connItem.open) connItem.send(packet);
+              });
+            }
+          }, 55);
+        }
+      });
+
+      c.on("data", (data) => {
+        if (!data || typeof data !== "object") return;
+        if (data.type === "HELLO10") {
+          queueMembers.set(data.id, { id: data.id, skin: data.skin ?? 1, lastSeen: Date.now() });
+          updateLobbySlotsUI();
+        } else if (data.type === "START_10P") {
+          if (gameState === "MATCHING") {
+            if (mqttClient) { try { mqttClient.end(true); } catch (e) {} mqttClient = null; }
+            const others = (data.roster || []).filter(m => m.id !== myPeerId);
+            startMatchSequence(data.mapIdx, data.seed, "🌐 10인 실시간 레이스", others);
+          }
+        } else if (data.type === "POS10") {
+          const targetRacer = racers.find(r => r.id === data.id);
+          if (targetRacer) {
+            targetRacer.targetX = data.x;
+            targetRacer.targetY = data.y;
+            targetRacer.facing = data.facing || 1;
+            targetRacer.progress = data.progress || 0;
+            if (data.finished && !targetRacer.finished) {
+              targetRacer.finished = true;
+              targetRacer.finishTime = data.finishTime || elapsedTime;
+            }
+          }
+        }
+      });
+
+      c.on("close", () => {
+        peerConns.delete(c.peer);
+      });
+    }
+
+    // ==========================================
+    // 7. 업데이트 & 렌더링 루프
+    // ==========================================
+    function getProgress(x) {
+      const totalDist = Math.max(1, currentCourse.goal.x - currentCourse.startX);
+      return Math.max(0, Math.min(100, ((x - currentCourse.startX) / totalDist) * 100));
+    }
+
+    function computeStandings() {
+      const all = [
+        { id: "ME", name: "⭐ 나 (ME)", progress: getProgress(player.x), finished: player.finished, finishTime: player.finishTime, isMe: true },
+        ...racers.map(r => ({
+          id: r.id,
+          name: r.name,
+          progress: r.progress,
+          finished: r.finished,
+          finishTime: r.finishTime,
+          isMe: false
+        }))
+      ];
+
+      all.sort((a, b) => {
+        if (a.finished && b.finished) return (a.finishTime || 0) - (b.finishTime || 0);
+        if (a.finished) return -1;
+        if (b.finished) return 1;
+        return b.progress - a.progress;
+      });
+      return all;
+    }
+
+    function finishRace() {
+      gameState = "FINISHED";
+      const standings = computeStandings();
+      const myRank = standings.findIndex(s => s.isMe) + 1;
+
+      document.getElementById("result-icon").textContent = myRank === 1 ? "🏆" : (myRank <= 3 ? "🥈" : "🏁");
+      document.getElementById("result-title").textContent = `10명 중 ${myRank}위 완주!`;
+      document.getElementById("result-desc").textContent = `완주 기록: ${elapsedTime.toFixed(2)}초`;
+
+      const lbEl = document.getElementById("leaderboard-list");
+      lbEl.innerHTML = standings.map((s, idx) => {
+        const statusStr = s.finished ? `${(s.finishTime || elapsedTime).toFixed(2)}s` : `${Math.floor(s.progress)}% 주행중`;
+        return `<div class="lb-row ${s.isMe ? "me" : ""}">
+          <span>${idx + 1}위 · ${s.name}</span>
+          <span>${statusStr}</span>
+        </div>`;
+      }).join("");
+
+      document.getElementById("result-screen").classList.remove("hidden");
+    }
+
+    function updatePhysics(dt, timeSec) {
+      for (const p of currentCourse.platforms) {
+        if (p.moveX !== 0) p.x = p.baseX + Math.sin(timeSec * p.speed) * p.moveX;
+        if (p.moveY !== 0) p.y = p.baseY + Math.cos(timeSec * p.speed) * p.moveY;
+      }
+
+      if (gameState !== "RACING") return;
+
+      elapsedTime = (performance.now() - raceStartTime) / 1000;
+      document.getElementById("hud-timer").textContent = `⏱️ ${elapsedTime.toFixed(2)}s`;
+
+      // 3초 쿨타임 대쉬 갱신
+      if (player.dashCooldown > 0) {
+        player.dashCooldown = Math.max(0, player.dashCooldown - dt);
+        document.getElementById("btn-dash").classList.add("cooldown");
+        document.getElementById("dash-cd-text").textContent = player.dashCooldown.toFixed(1) + "s";
+      } else {
+        document.getElementById("btn-dash").classList.remove("cooldown");
+        document.getElementById("dash-cd-text").textContent = "READY";
+      }
+
+      if (player.dashActiveTimer > 0) {
+        player.dashActiveTimer -= dt;
+      } else {
+        const moveDir = (input.right ? 1 : 0) - (input.left ? 1 : 0);
+        if (moveDir !== 0) player.facing = moveDir;
+        const targetVx = moveDir * 360;
+        const accel = player.grounded ? 2600 : 1800;
+        if (player.vx < targetVx) player.vx = Math.min(targetVx, player.vx + accel * dt);
+        else if (player.vx > targetVx) player.vx = Math.max(targetVx, player.vx - accel * dt);
+      }
+
+      player.vy += 1550 * dt;
+      if (player.vy > 1100) player.vy = 1100;
+
+      const prevBottom = player.y + player.h;
+      player.x += player.vx * dt;
+      player.y += player.vy * dt;
+
+      if (player.grounded) player.coyoteTimer = 0.1;
+      else player.coyoteTimer = Math.max(0, player.coyoteTimer - dt);
+      player.grounded = false;
+
+      for (const p of currentCourse.platforms) {
+        if (
+          player.x + player.w > p.x &&
+          player.x < p.x + p.w &&
+          player.vy >= 0 &&
+          prevBottom <= p.y + 18 &&
+          player.y + player.h >= p.y
+        ) {
+          player.y = p.y - player.h;
+          player.vy = 0;
+          player.grounded = true;
+        }
+      }
+
+      for (const s of currentCourse.springs) {
+        if (
+          player.x + player.w > s.x &&
+          player.x < s.x + s.w &&
+          player.y + player.h > s.y &&
+          player.y < s.y + s.h
+        ) {
+          player.vy = -960;
+          player.grounded = false;
+        }
+      }
+
+      for (const cp of currentCourse.checkpoints) {
+        if (Math.abs((player.x + player.w * 0.5) - cp.x) < 42 && Math.abs((player.y + player.h) - (cp.y + 40)) < 65) {
+          player.respawnX = cp.x - player.w * 0.5;
+          player.respawnY = cp.y;
+        }
+      }
+
+      let hitHazard = false;
+      for (const h of currentCourse.hazards) {
+        if (
+          player.x + player.w - 4 > h.x &&
+          player.x + 4 < h.x + h.w &&
+          player.y + player.h > h.y &&
+          player.y < h.y + h.h
+        ) {
+          hitHazard = true;
+          break;
+        }
+      }
+      if (hitHazard || player.y > 860) {
+        player.x = player.respawnX;
+        player.y = player.respawnY;
+        player.vx = 0;
+        player.vy = 0;
+      }
+
+      // 나머지 9명의 레이서 업데이트
+      for (const r of racers) {
+        if (r.isBot) {
+          if (!r.finished) {
+            r.x += r.baseSpeed * dt;
+            r.facing = 1;
+            let supportPlat = currentCourse.platforms[0];
+            for (const p of currentCourse.platforms) {
+              if (r.x + 15 >= p.x - 45 && r.x <= p.x + p.w + 45) {
+                supportPlat = p;
+              }
+            }
+            const desiredY = supportPlat.y - r.h - Math.abs(Math.sin(timeSec * 5 + r.jumpPhase)) * 52;
+            r.y += (desiredY - r.y) * Math.min(1, dt * 8);
+            r.progress = getProgress(r.x);
+
+            if (r.x >= currentCourse.goal.x) {
+              r.finished = true;
+              r.finishTime = elapsedTime;
+            }
+          }
+        } else {
+          r.x += (r.targetX - r.x) * Math.min(1, dt * 16);
+          r.y += (r.targetY - r.y) * Math.min(1, dt * 16);
+        }
+
+        const dot = document.getElementById("marker-opp-" + r.id);
+        if (dot) dot.style.left = r.progress + "%";
+      }
+
+      // 진행도 및 실시간 순위 HUD 갱신
+      const myProg = getProgress(player.x);
+      document.getElementById("progress-me").style.width = myProg + "%";
+      document.getElementById("marker-me").style.left = myProg + "%";
+
+      const standings = computeStandings();
+      const myRank = standings.findIndex(s => s.isMe) + 1;
+      document.getElementById("hud-rank").textContent = `🏅 ${myRank}위 / 10명`;
+
+      // 결승선 통과
+      if (player.x + player.w >= currentCourse.goal.x && !player.finished) {
+        player.finished = true;
+        player.finishTime = elapsedTime;
+        peerConns.forEach(c => {
+          if (c.open) {
+            c.send({
+              type: "POS10",
+              id: myPeerId,
+              x: Math.round(player.x),
+              y: Math.round(player.y),
+              facing: player.facing,
+              progress: 100,
+              finished: true,
+              finishTime: elapsedTime
+            });
+          }
+        });
+        finishRace();
+      }
+    }
+
+    function drawCharacter(x, y, w, h, facing, skinId, label, isGhost) {
+      const skin = SKINS[skinId] || SKINS[0];
+      ctx.save();
+      if (isGhost) ctx.globalAlpha = 0.56;
+
+      ctx.fillStyle = skin.body;
+      ctx.strokeStyle = "#ffffff";
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.roundRect(x, y, w, h, 7);
+      ctx.fill();
+      ctx.stroke();
+
+      ctx.fillStyle = skin.band;
+      ctx.fillRect(x + 2, y + 6, w - 4, 5);
+
+      ctx.fillStyle = skin.eye;
+      const eyeX = facing >= 0 ? x + w - 10 : x + 4;
+      ctx.fillRect(eyeX, y + 13, 6, 6);
+
+      ctx.globalAlpha = isGhost ? 0.85 : 1;
+      ctx.font = "bold 11px sans-serif";
+      ctx.textAlign = "center";
+      ctx.fillStyle = isGhost ? "#e2e8f0" : "#38bdf8";
+      ctx.fillText(label, x + w * 0.5, y - 7);
+      ctx.restore();
+    }
+
+    function render() {
+      const theme = currentCourse.theme;
+
+      const grad = ctx.createLinearGradient(0, 0, 0, viewH);
+      grad.addColorStop(0, theme.bgTop);
+      grad.addColorStop(1, theme.bgBot);
+      ctx.fillStyle = grad;
+      ctx.fillRect(0, 0, viewW, viewH);
+
+      // 내 캐릭터 화면 정중앙 고정 카메라
+      const camX = (player.x + player.w * 0.5) - viewW * 0.5;
+      const camY = (player.y + player.h * 0.5) - viewH * 0.5;
+
+      ctx.strokeStyle = "rgba(255, 255, 255, 0.06)";
+      ctx.lineWidth = 1;
+      const gridSize = 80;
+      const offsetX = -(camX % gridSize);
+      const offsetY = -(camY % gridSize);
+      ctx.beginPath();
+      for (let gx = offsetX; gx < viewW; gx += gridSize) {
+        ctx.moveTo(gx, 0);
+        ctx.lineTo(gx, viewH);
+      }
+      for (let gy = offsetY; gy < viewH; gy += gridSize) {
+        ctx.moveTo(0, gy);
+        ctx.lineTo(viewW, gy);
+      }
+      ctx.stroke();
+
+      ctx.save();
+      ctx.translate(-camX, -camY);
+
+      for (const p of currentCourse.platforms) {
+        ctx.fillStyle = theme.plat;
+        ctx.fillRect(p.x, p.y, p.w, p.h);
+
+        ctx.fillStyle = theme.platTop;
+        ctx.fillRect(p.x, p.y, p.w, 8);
+
+        ctx.strokeStyle = "rgba(255, 255, 255, 0.45)";
+        ctx.lineWidth = 2;
+        ctx.strokeRect(p.x, p.y, p.w, p.h);
+      }
+
+      for (const s of currentCourse.springs) {
+        ctx.fillStyle = "#facc15";
+        ctx.fillRect(s.x, s.y, s.w, s.h);
+        ctx.fillStyle = "#ef4444";
+        ctx.fillRect(s.x - 2, s.y, s.w + 4, 5);
+      }
+
+      for (const h of currentCourse.hazards) {
+        ctx.fillStyle = theme.hazard;
+        ctx.beginPath();
+        ctx.moveTo(h.x, h.y + h.h);
+        ctx.lineTo(h.x + h.w * 0.5, h.y);
+        ctx.lineTo(h.x + h.w, h.y + h.h);
+        ctx.closePath();
+        ctx.fill();
+      }
+
+      for (const cp of currentCourse.checkpoints) {
+        ctx.fillStyle = "#cbd5e1";
+        ctx.fillRect(cp.x - 2, cp.y, 4, 40);
+        ctx.fillStyle = "#34d399";
+        ctx.beginPath();
+        ctx.moveTo(cp.x + 2, cp.y);
+        ctx.lineTo(cp.x + 22, cp.y + 8);
+        ctx.lineTo(cp.x + 2, cp.y + 16);
+        ctx.closePath();
+        ctx.fill();
+      }
+
+      const g = currentCourse.goal;
+      ctx.fillStyle = "#f8fafc";
+      ctx.fillRect(g.x, g.y, 6, g.h);
+      ctx.fillStyle = "#f43f5e";
+      ctx.fillRect(g.x + 6, g.y, 44, 28);
+      ctx.fillStyle = "#ffffff";
+      ctx.font = "bold 11px sans-serif";
+      ctx.fillText("GOAL", g.x + 12, g.y + 18);
+
+      // 나머지 9명 레이서 렌더링
+      for (const r of racers) {
+        drawCharacter(r.x, r.y, r.w, r.h, r.facing, r.skinId, r.name, true);
+      }
+
+      if (player.dashActiveTimer > 0) {
+        ctx.fillStyle = "rgba(56, 189, 248, 0.35)";
+        ctx.fillRect(player.x - player.facing * 24, player.y + 4, player.w, player.h - 8);
+      }
+
+      // 내 캐릭터 렌더링
+      drawCharacter(player.x, player.y, player.w, player.h, player.facing, selectedSkinId, "⭐ 나 (ME)", false);
+
+      ctx.restore();
+    }
+
+    let lastFrame = performance.now();
+    function loop(now) {
+      const dt = Math.min(0.05, (now - lastFrame) / 1000);
+      lastFrame = now;
+      updatePhysics(dt, now / 1000);
+      render();
+      requestAnimationFrame(loop);
+    }
+    requestAnimationFrame(loop);
+
+    // ==========================================
+    // 8. UI 버튼 연결
+    // ==========================================
+    document.getElementById("btn-random-match").addEventListener("click", startOnline10PMatch);
+    document.getElementById("btn-bot-match").addEventListener("click", startBot10PMatch);
+    document.getElementById("btn-fill-now").addEventListener("click", launchOnline10PRoom);
+
+    document.getElementById("btn-exit-match").addEventListener("click", () => {
+      cleanupNetwork();
+      gameState = "LOBBY";
+      document.getElementById("countdown-overlay").classList.add("hidden");
+      document.getElementById("result-screen").classList.add("hidden");
+      document.getElementById("lobby-screen").classList.remove("hidden");
+      document.getElementById("match-status").textContent = "버튼을 눌러 랜덤 9명(총 10명)과 파쿠르 레이스를 시작하세요!";
+    });
+
+    document.getElementById("btn-rematch").addEventListener("click", () => {
+      if (matchMode === "ONLINE") startOnline10PMatch();
+      else startBot10PMatch();
+    });
+
+    document.getElementById("btn-result-lobby").addEventListener("click", () => {
+      cleanupNetwork();
+      gameState = "LOBBY";
+      document.getElementById("result-screen").classList.add("hidden");
+      document.getElementById("lobby-screen").classList.remove("hidden");
+      document.getElementById("match-status").textContent = "버튼을 눌러 랜덤 9명(총 10명)과 파쿠르 레이스를 시작하세요!";
+    });
+  </script>
+</body>
+</html>
